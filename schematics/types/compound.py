@@ -3,7 +3,7 @@
 
 from __future__ import division
 from ..exceptions import ValidationError, ConversionError, ModelValidationError, StopValidation
-from ..serialize import apply_shape, EMPTY_LIST, EMPTY_DICT
+from ..transforms import export_loop, EMPTY_LIST, EMPTY_DICT
 from .base import BaseType
 
 class MultiType(BaseType):
@@ -29,8 +29,8 @@ class MultiType(BaseType):
 
         return value
 
-    def apply_shape(self, shape_instance, role, field_converter,
-                    shape_converter, print_none=False):
+    def export_loop(self, shape_instance, field_converter,
+                    role=None, print_none=False):
         raise NotImplemented()
 
 
@@ -50,7 +50,7 @@ class ModelType(MultiType):
     def __repr__(self):
         return object.__repr__(self)[:-1] + ' for %s>' % self.model_class
 
-    def convert(self, value):
+    def to_native(self, value):
         # We have already checked if the field is required. If it is None it
         # should continue being None
         if value is None:  
@@ -80,14 +80,15 @@ class ModelType(MultiType):
 
         return primitive_data
 
-    def apply_shape(self, model_instance, role, field_converter,
-                    shape_converter, print_none=False):
+    def export_loop(self, model_instance, field_converter, 
+                    role=None, print_none=False):
         """
-        Calls the main `apply_shape` implementation because they are both
+        Calls the main `export_loop` implementation because they are both
         supposed to operate on models.
         """
-        shaped =  apply_shape(self.model_class, model_instance, role,
-                              field_converter, shape_converter)
+        shaped =  export_loop(self.model_class, model_instance,
+                              field_converter, 
+                              role=role, print_none=print_none)
 
         if shaped and len(shaped) == 0 and self.allow_none():
             return shaped
@@ -130,10 +131,10 @@ class ListType(MultiType):
         except TypeError:
             return [value]
 
-    def convert(self, value):
+    def to_native(self, value):
         items = self._force_list(value)
 
-        return map(self.field.convert, items)
+        return map(self.field.to_native, items)
 
     def check_length(self, value):
         list_length = len(value) if value else 0
@@ -166,22 +167,23 @@ class ListType(MultiType):
     def to_primitive(self, value):
         return map(self.field.to_primitive, value)
 
-    def apply_shape(self, list_instance, role, field_converter,
-                    shape_converter, print_none=False):
+    def export_loop(self, list_instance, field_converter, 
+                    role=None, print_none=False):
         """Loops over each item in the model and applies either the field
         transform or the multitype transform.  Essentially functions the same
-        as `serialize.apply_shape`.
+        as `serialize.export_loop`.
         """
         data = []
         for value in list_instance:
-            if hasattr(self.field, 'apply_shape'):
-                shaped = self.field.apply_shape(value, role,
-                                                field_converter, shape_converter)
+            if hasattr(self.field, 'export_loop'):
+                shaped = self.field.export_loop(value, field_converter,
+                                                role=role)
                 feels_empty = shaped and len(shaped) == 0
             else:
                 shaped = field_converter(self.field, value)
                 feels_empty = shaped == None
-                
+
+            ### Print if we want empty or found a value
             if (feels_empty and self.allow_none()):
                 data.append(shaped)
             elif shaped is not None:
@@ -189,6 +191,7 @@ class ListType(MultiType):
             elif print_none:
                 data.append(shaped)
 
+        ### Return data if the list contains anything
         if len(data) > 0:
             return data
         elif len(data) == 0 and self.allow_none():
@@ -214,7 +217,7 @@ class DictType(MultiType):
     def model_class(self):
         return self.field.model_class
 
-    def convert(self, value, safe=False):
+    def to_native(self, value, safe=False):
         if value == EMPTY_DICT:
             value = {}
 
@@ -223,7 +226,7 @@ class DictType(MultiType):
         if not isinstance(value, dict):
             raise ValidationError(u'Only dictionaries may be used in a DictType')
 
-        return dict((self.coerce_key(k), self.field.convert(v))
+        return dict((self.coerce_key(k), self.field.to_native(v))
                     for k, v in value.iteritems())
 
     def validate_items(self, items):
@@ -240,18 +243,18 @@ class DictType(MultiType):
     def to_primitive(self, value):
         return dict((unicode(k), self.field.to_primitive(v)) for k, v in value.iteritems())
 
-    def apply_shape(self, dict_instance, role, field_converter,
-                    shape_converter, print_none=False):
+    def export_loop(self, dict_instance, field_converter, 
+                    role=None, print_none=False):
         """Loops over each item in the model and applies either the field
         transform or the multitype transform.  Essentially functions the same
-        as `serialize.apply_shape`.
+        as `serialize.export_loop`.
         """
         data = {}
         
         for key, value in dict_instance.iteritems():
-            if hasattr(self.field, 'apply_shape'):
-                shaped = self.field.apply_shape(value, role,
-                                                field_converter, shape_converter)
+            if hasattr(self.field, 'export_loop'):
+                shaped = self.field.export_loop(value, field_converter,
+                                                role=role)
                 feels_empty = shaped and len(shaped) == 0
             else:
                 shaped = field_converter(self.field, value)

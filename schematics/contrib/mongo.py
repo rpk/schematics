@@ -1,5 +1,5 @@
 """This module contains fields that depend on importing `bson`. `bson` is
-as part of the pymongo distribution.
+a part of the pymongo distribution.
 """
 
 from schematics.types import BaseType
@@ -20,7 +20,7 @@ class ObjectIdType(BaseType):
         self.auto_fill = auto_fill
         super(ObjectIdType, self).__init__(**kwargs)
 
-    def convert(self, value):
+    def to_native(self, value):
         if not isinstance(value, bson.objectid.ObjectId):
             value = bson.objectid.ObjectId(unicode(value))
         return value

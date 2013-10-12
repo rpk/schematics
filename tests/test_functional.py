@@ -4,7 +4,7 @@ import unittest
 from schematics.models import Model
 from schematics.types import IntType, StringType
 from schematics.validate import validate
-from schematics.exceptions import ValidationError
+from schematics.exceptions import ValidationError, ModelConversionError
 
 
 class TestFunctionalInterface(unittest.TestCase):
@@ -13,7 +13,7 @@ class TestFunctionalInterface(unittest.TestCase):
         class Player(Model):
             id = IntType()
 
-        validate(Player, {'id': 4})            
+        validate(Player, {'id': 4})
 
     def test_validate_keep_context_data(self):
         class Player(Model):
@@ -47,10 +47,13 @@ class TestFunctionalInterface(unittest.TestCase):
         class Player(Model):
             id = IntType()
 
-        try:
+        with self.assertRaises(ValidationError) as e:
             data = validate(Player, {'id': 4}, strict=True, context={'name': 'Arthur'})
-        except ValidationError as e:
-            self.assertIn('name', e.messages)
+        self.assertIn('name', e.exception.messages)
+
+        with self.assertRaises(ModelConversionError) as e:
+            Player({'id': 4, 'name': 'Arthur'}).validate(strict=True)
+        self.assertIn('name', e.exception.messages)
 
     def test_validate_partial_with_context_data(self):
         class Player(Model):
@@ -66,13 +69,15 @@ class TestFunctionalInterface(unittest.TestCase):
             id = IntType()
 
             def validate_id(self, context, value):
-                if self.id:
+                if p1._initial['id'] != value:
+                    p1._data['id'] = p1._initial['id']
                     raise ValidationError('Cannot change id')
 
         p1 = Player({'id': 4})
+        p1.id = 3
 
         try:
-            data = validate(p1, {'id': 3})
+            data = validate(Player, p1)
         except ValidationError as e:
             self.assertIn('id', e.messages)
             self.assertIn('Cannot change id', e.messages['id'])
