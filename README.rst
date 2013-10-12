@@ -102,3 +102,8 @@ was renamed Schematics.
 
 DictShield still exists, but consider anything with that label to be
 a ghost from this project's early years.
+
+Testing & Coverage support
+==========================
+Run coverage and check the missing statements.
+$ `coverage run --source schematics -m py.test && coverage report`
