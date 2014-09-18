@@ -2,6 +2,7 @@
 
 from __future__ import division
 from ..exceptions import ValidationError, ConversionError, ModelValidationError, StopValidation
+from ..models import Model
 from ..transforms import export_loop, EMPTY_LIST, EMPTY_DICT
 from .base import BaseType
 
