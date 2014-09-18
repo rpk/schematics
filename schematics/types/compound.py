@@ -123,6 +123,87 @@ class ModelType(MultiType):
             return shaped
 
 
+class PolymorphicType(ModelType):
+    """This allows proper serialization and deserialization of polymorphic
+    Model properties. Should be merged into Schematics if it's cleaned up.
+    """
+    def __init__(self, type_attr_map=None, attr_name=None, **kwargs):
+        is_embeddable = lambda dt: issubclass(dt, Model)
+        for key, model_type in type_attr_map.items():
+            if not isinstance(model_type, basestring):
+                if not model_type or not is_embeddable(model_type):
+                    error_msg = 'Invalid model class provided to a ' \
+                                'SubclassType: %s in key %s' % (model_type, key)
+                    raise ValidationError(error_msg)
+        super(ModelType, self).__init__(**kwargs)
+        self.strict = True
+        self.type_attr_map = type_attr_map
+        self.attr_name = attr_name
+
+    def validate(self, value):
+        instance = False
+        for model_type in self.type_attr_map.values():
+            if isinstance(value, model_type):
+                instance = True
+                break
+        if not instance:
+            error_msg = 'Invalid instance provided to a SubclassType'
+            raise ValidationError(error_msg)
+        return self.validate(value)
+
+    def to_native(self, value, mapping=None, context=None):
+        # We have already checked if the field is required. If it is None it
+        # should continue being None
+        descriminator_value = value.get(self.attr_name)
+        if descriminator_value and descriminator_value in self.type_attr_map:
+            self.model_class = self.type_attr_map[descriminator_value]
+        else:
+            raise ConversionError(
+                u'Descriminator key missing'.format(
+                    self.model_class.__name__,
+                    type(value).__name__))
+        if mapping is None:
+            mapping = {}
+        if value is None:
+            return None
+        if isinstance(value, self.model_class):
+            return value
+
+        if not isinstance(value, dict):
+            raise ConversionError(
+                u'Please use a mapping for this field or {0} instance instead of {1}.'.format(
+                    self.model_class.__name__,
+                    type(value).__name__))
+
+        # partial submodels now available with import_data (ht ryanolson)
+        model = self.model_class()
+        return model.import_data(value, mapping=mapping, context=context,
+                                 strict=self.strict)
+
+    def export_loop(self, model_instance, field_converter,
+                    role=None, print_none=False):
+        """
+        Calls the main `export_loop` implementation because they are both
+        supposed to operate on models.
+        """
+        self.model_class = model_instance.__class__
+        if isinstance(model_instance, self.model_class):
+            model_class = model_instance.__class__
+        else:
+            model_class = self.model_class
+
+        shaped = export_loop(model_class, model_instance,
+                             field_converter,
+                             role=role, print_none=print_none)
+
+        if shaped and len(shaped) == 0 and self.allow_none():
+            return shaped
+        elif shaped:
+            return shaped
+        elif print_none:
+            return shaped
+
+
 class ListType(MultiType):
 
     def __init__(self, field, min_size=None, max_size=None, **kwargs):
